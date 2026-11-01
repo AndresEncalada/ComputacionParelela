@@ -1,0 +1,6 @@
+*.exe
+*.obj
+*.o
+*.exp
+*.lib
+resultados/*.pgm
