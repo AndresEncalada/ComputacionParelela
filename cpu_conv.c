@@ -8,6 +8,13 @@
 #include <time.h>
 #include <math.h>
 
+// stb_image: cabecera unica para leer JPG, PNG, BMP, etc. sin dependencias externas
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_PNG
+#define STBI_ONLY_BMP
+#include "stb_image.h"
+
 #define NUM_REPS 5  // 5 repeticiones medidas (+ 1 previa de calentamiento)
 
 // Estructura basica para manejar la imagen en un arreglo 1D
@@ -67,6 +74,34 @@ Imagen* leerPGM(const char *ruta) {
         liberarImagen(img);
         return NULL;
     }
+    return img;
+}
+
+// Carga cualquier imagen (JPG, PNG, BMP o PGM) y la devuelve en escala de grises.
+// stb_image convierte automaticamente de color a gris con la formula estandar.
+Imagen* leerImagen(const char *ruta) {
+    // Si la extension es .pgm usamos nuestro lector propio (garantiza compatibilidad P5)
+    int n = (int)strlen(ruta);
+    if (n >= 4) {
+        const char *e = ruta + n - 4;
+        if ((e[0]=='.') &&
+            (e[1]=='p'||e[1]=='P') &&
+            (e[2]=='g'||e[2]=='G') &&
+            (e[3]=='m'||e[3]=='M'))
+            return leerPGM(ruta);
+    }
+
+    // Para JPG/PNG/BMP: stbi_load con desired_channels=1 entrega gris directamente
+    int ancho, alto, canales_orig;
+    unsigned char *raw = stbi_load(ruta, &ancho, &alto, &canales_orig, 1);
+    if (!raw) {
+        fprintf(stderr, "No se pudo leer la imagen '%s': %s\n", ruta, stbi_failure_reason());
+        return NULL;
+    }
+
+    Imagen *img = crearImagen(ancho, alto);
+    memcpy(img->datos, raw, (size_t)ancho * alto);
+    stbi_image_free(raw);
     return img;
 }
 

@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
            prop.name, prop.major, prop.minor, (double)prop.totalGlobalMem / (1024.0 * 1024.0));
     printf("Nota: cudaMalloc y cudaFree estan excluidos de la medicion de tiempos.\n\n");
 
-    Imagen *base = (argc >= 2) ? leerPGM(argv[1]) : leerPGM("entrada.pgm");
+    Imagen *base = (argc >= 2) ? leerImagen(argv[1]) : leerImagen("entrada.pgm");
     if (base) printf("Imagen base leida: %dx%d px\n\n", base->ancho, base->alto);
     else      printf("Sin imagen base; usando gradiente sintetico.\n\n");
 

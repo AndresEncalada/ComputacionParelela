@@ -1,0 +1,10 @@
+implementacion,filtro,resolucion,mascara,mediana_ms,min_ms,max_ms
+CPU,media,4000x4000,3x3,215.0,211.0,220.0
+CPU,nitidez,4000x4000,3x3,209.0,207.0,212.0
+CPU,laplaciano,4000x4000,3x3,212.0,208.0,215.0
+CPU,media,2000x2000,9x9,420.0,416.0,422.0
+CPU,media,4000x4000,9x9,1650.0,1627.0,1658.0
+CPU,media,6000x6000,9x9,3727.0,3712.0,3799.0
+CPU,media,4000x4000,3x3,209.0,208.0,214.0
+CPU,media,4000x4000,9x9,1651.0,1648.0,2274.0
+CPU,media,4000x4000,21x21,7794.0,7749.0,7811.0
