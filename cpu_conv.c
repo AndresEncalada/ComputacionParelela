@@ -1,53 +1,50 @@
 /*
- * cpu_conv.c - Convolución 2D en CPU
- *
- * Compilar:
- *   nvcc -O2 -o cpu_conv.exe cpu_conv.c
- *
- * Uso:
- *   cpu_conv.exe [imagen.pgm]
- *   (sin argumento genera imágenes sintéticas)
- *
- * Salida:
- *   resultados/resultados_cpu.csv  - tiempos de ejecución
- *   resultados/*.pgm               - imágenes filtradas
+ * cpu_conv.c - Funciones de imagen, mascaras y convolucion 2D secuencial en CPU
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
-#define NUM_REPS 5  /* repeticiones medidas por experimento (+ 1 calentamiento) */
+#define NUM_REPS 5  // 5 repeticiones medidas (+ 1 previa de calentamiento)
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* Imagen                                                                      */
-/* ─────────────────────────────────────────────────────────────────────────── */
-
-/* pixel(fila, col) = datos[fila * ancho + col] */
-typedef struct { int ancho, alto; unsigned char *datos; } Imagen;
+// Estructura basica para manejar la imagen en un arreglo 1D
+// El pixel (fila, col) se ubica en datos[fila * ancho + col]
+typedef struct {
+    int ancho;
+    int alto;
+    unsigned char *datos;
+} Imagen;
 
 Imagen* crearImagen(int ancho, int alto) {
     Imagen *img = (Imagen*)malloc(sizeof(Imagen));
-    img->ancho = ancho; img->alto = alto;
-    img->datos = (unsigned char*)calloc(ancho * alto, 1);
+    img->ancho = ancho;
+    img->alto = alto;
+    img->datos = (unsigned char*)calloc((size_t)ancho * alto, 1);
     return img;
 }
 
-void liberarImagen(Imagen *img) { free(img->datos); free(img); }
+void liberarImagen(Imagen *img) {
+    free(img->datos);
+    free(img);
+}
 
-/* Lee PGM binario (P5). Retorna NULL si falla. */
+// Lee una imagen en formato PGM binario (P5)
 Imagen* leerPGM(const char *ruta) {
     FILE *f = fopen(ruta, "rb");
     if (!f) return NULL;
 
     char magic[3];
-    fscanf(f, "%2s", magic);
-    if (strcmp(magic, "P5") != 0) { fclose(f); return NULL; }
+    if (fscanf(f, "%2s", magic) != 1 || strcmp(magic, "P5") != 0) {
+        fclose(f);
+        return NULL;
+    }
 
-    /* Saltar comentarios */
+    // Saltar espacios y lineas de comentarios que empiezan con '#'
     int c = fgetc(f);
-    while (c == '\n' || c == '\r' || c == ' ') c = fgetc(f);
+    while (c == '\n' || c == '\r' || c == ' ' || c == '\t') c = fgetc(f);
     while (c == '#') {
         while (c != '\n' && c != EOF) c = fgetc(f);
         c = fgetc(f);
@@ -56,12 +53,20 @@ Imagen* leerPGM(const char *ruta) {
 
     Imagen *img = (Imagen*)malloc(sizeof(Imagen));
     int maxval;
-    fscanf(f, "%d %d %d", &img->ancho, &img->alto, &maxval);
-    fgetc(f); /* byte separador entre cabecera y datos binarios */
+    if (fscanf(f, "%d %d %d", &img->ancho, &img->alto, &maxval) != 3) {
+        free(img);
+        fclose(f);
+        return NULL;
+    }
+    fgetc(f); // Saltar el salto de linea antes de los bytes de la imagen
 
-    img->datos = (unsigned char*)malloc(img->ancho * img->alto);
-    fread(img->datos, 1, img->ancho * img->alto, f);
+    img->datos = (unsigned char*)malloc((size_t)img->ancho * img->alto);
+    size_t leidos = fread(img->datos, 1, (size_t)img->ancho * img->alto, f);
     fclose(f);
+    if (leidos != (size_t)img->ancho * img->alto) {
+        liberarImagen(img);
+        return NULL;
+    }
     return img;
 }
 
@@ -69,22 +74,28 @@ void guardarPGM(const char *ruta, Imagen *img) {
     FILE *f = fopen(ruta, "wb");
     if (!f) return;
     fprintf(f, "P5\n%d %d\n255\n", img->ancho, img->alto);
-    fwrite(img->datos, 1, img->ancho * img->alto, f);
+    fwrite(img->datos, 1, (size_t)img->ancho * img->alto, f);
     fclose(f);
 }
 
-/* Recorte centrado de 'base' al tamaño (ancho x alto).
- * Si base es NULL o muy pequeña, genera un gradiente sintético. */
+// Si hay imagen base, toma un recorte cuadrado del centro y lo escala a (ancho x alto)
+// usando vecino mas cercano. Si no hay imagen base, llena un gradiente diagonal.
 Imagen* prepararImagen(Imagen *base, int ancho, int alto) {
     Imagen *img = crearImagen(ancho, alto);
-    if (base && base->ancho >= ancho && base->alto >= alto) {
-        int ox = (base->ancho - ancho) / 2;
-        int oy = (base->alto  - alto)  / 2;
-        for (int y = 0; y < alto; y++)
-            memcpy(&img->datos[y * ancho],
-                   &base->datos[(y + oy) * base->ancho + ox], ancho);
+    if (base && base->ancho > 0 && base->alto > 0) {
+        // Lado del cuadrado centrado dentro de la imagen original
+        int lado = (base->ancho < base->alto) ? base->ancho : base->alto;
+        int ox = (base->ancho - lado) / 2;
+        int oy = (base->alto  - lado) / 2;
+
+        for (int y = 0; y < alto; y++) {
+            int src_y = oy + (int)((long long)y * lado / alto);
+            for (int x = 0; x < ancho; x++) {
+                int src_x = ox + (int)((long long)x * lado / ancho);
+                img->datos[y * ancho + x] = base->datos[src_y * base->ancho + src_x];
+            }
+        }
     } else {
-        /* Gradiente diagonal: útil para ver el efecto de los filtros */
         for (int y = 0; y < alto; y++)
             for (int x = 0; x < ancho; x++)
                 img->datos[y * ancho + x] = (unsigned char)((x + y) * 255 / (ancho + alto));
@@ -92,124 +103,129 @@ Imagen* prepararImagen(Imagen *base, int ancho, int alto) {
     return img;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* Máscaras                                                                    */
-/* ─────────────────────────────────────────────────────────────────────────── */
+// --- Definicion de mascaras ---
 
-/* Media 3x3: todos los coeficientes = 1/9 → suaviza la imagen */
+// Filtro de media 3x3: promedia los 9 vecinos para suavizar la imagen
 float MEDIA_3[9] = {
     1/9.0f, 1/9.0f, 1/9.0f,
     1/9.0f, 1/9.0f, 1/9.0f,
     1/9.0f, 1/9.0f, 1/9.0f
 };
 
-/* Nitidez 3x3: amplifica el centro y resta los vecinos → realza bordes */
+// Filtro de nitidez 3x3: refuerza el pixel central y resta los lados
 float NITIDEZ_3[9] = {
      0, -1,  0,
     -1,  5, -1,
      0, -1,  0
 };
 
-/* Laplaciano 3x3: resalta cambios bruscos de intensidad */
+// Filtro Laplaciano 3x3: detecta cambios bruscos de intensidad (bordes)
 float LAPLACIANO_3[9] = {
      0,  1,  0,
      1, -4,  1,
      0,  1,  0
 };
 
-/* Genera una máscara de media k×k: cada coeficiente = 1/(k*k) */
+// Llena una mascara de media de tamano k x k donde cada valor es 1/(k*k)
 void mascaraMedia(float *m, int k) {
     float v = 1.0f / (k * k);
     for (int i = 0; i < k * k; i++) m[i] = v;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* Convolución                                                                 */
-/* ─────────────────────────────────────────────────────────────────────────── */
+// --- Funciones de convolucion ---
 
-/*
- * Aplica la máscara (tam × tam) sobre 'entrada' y escribe en 'salida'.
- *
- * Manejo de bordes: ZERO-PADDING.
- *   Píxeles fuera de la imagen se tratan como 0.
- *   Esto hace que CPU y GPU (Parte 2) sean comparables directamente.
- */
-void convolucionCPU(Imagen *entrada, Imagen *salida, float *mascara, int tam) {
-    int mitad = tam / 2;
+// Aplica la convolucion y guarda el resultado en float sin recortar a [0, 255].
+// Esto permite comparar los decimales exactos contra la GPU antes de guardar la imagen.
+void convolucionCPU_Crudo(Imagen *entrada, float *salida_cruda, float *mascara, int tam) {
+    int mitad = tam / 2; // Desplazamiento desde el centro de la mascara
 
     for (int fila = 0; fila < entrada->alto; fila++) {
         for (int col = 0; col < entrada->ancho; col++) {
-            double suma = 0.0;
+            float suma = 0.0f;
 
+            // Recorrer la vecindad de tam x tam alrededor de (fila, col)
             for (int ky = 0; ky < tam; ky++) {
                 for (int kx = 0; kx < tam; kx++) {
                     int y = fila + ky - mitad;
                     int x = col  + kx - mitad;
 
-                    /* Zero-padding: pixel fuera de imagen vale 0 */
+                    // Zero-padding: si el vecino cae fuera de la imagen, vale 0
                     unsigned char pixel = 0;
                     if (x >= 0 && x < entrada->ancho &&
                         y >= 0 && y < entrada->alto)
                         pixel = entrada->datos[y * entrada->ancho + x];
 
-                    suma += pixel * mascara[ky * tam + kx];
+                    suma += (float)pixel * mascara[ky * tam + kx];
                 }
             }
-
-            /* Clamp [0, 255] */
-            if (suma < 0)   suma = 0;
-            if (suma > 255) suma = 255;
-            salida->datos[fila * entrada->ancho + col] = (unsigned char)suma;
+            salida_cruda[fila * entrada->ancho + col] = suma;
         }
     }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* Cronometraje                                                                */
-/* ─────────────────────────────────────────────────────────────────────────── */
+// Limita los valores al rango [0, 255] (clamp) y los pasa a unsigned char para el PGM
+void convertirCrudoAPGM(const float *salida_cruda, Imagen *salida) {
+    int n = salida->ancho * salida->alto;
+    for (int i = 0; i < n; i++) {
+        float v = salida_cruda[i];
+        if (v < 0.0f)   v = 0.0f;
+        if (v > 255.0f) v = 255.0f;
+        salida->datos[i] = (unsigned char)v;
+    }
+}
 
+void convolucionCPU(Imagen *entrada, Imagen *salida, float *mascara, int tam) {
+    float *crudo = (float*)malloc((size_t)entrada->ancho * entrada->alto * sizeof(float));
+    convolucionCPU_Crudo(entrada, crudo, mascara, tam);
+    convertirCrudoAPGM(crudo, salida);
+    free(crudo);
+}
+
+// --- Medicion de tiempos ---
+
+// Funcion auxiliar para ordenar el arreglo de tiempos con qsort
 static int cmpd(const void *a, const void *b) {
     double da = *(double*)a, db = *(double*)b;
     return (da > db) - (da < db);
 }
 
-/* Ejecuta 1 calentamiento + NUM_REPS medidas. Retorna la mediana en ms. */
-double medirTiempo(Imagen *ent, Imagen *sal, float *mask, int tam,
-                   double *vmin, double *vmax) {
+// Hace 1 corrida de calentamiento y luego mide NUM_REPS repeticiones.
+// Devuelve la mediana en milisegundos.
+double medirTiempo(Imagen *ent, float *sal_cruda, float *mask, int tam,
+                   double *tiempos_out, double *vmin, double *vmax) {
     double t[NUM_REPS];
-    convolucionCPU(ent, sal, mask, tam); /* calentamiento */
+    convolucionCPU_Crudo(ent, sal_cruda, mask, tam); // Calentamiento no medido
+
     for (int r = 0; r < NUM_REPS; r++) {
         clock_t ini = clock();
-        convolucionCPU(ent, sal, mask, tam);
+        convolucionCPU_Crudo(ent, sal_cruda, mask, tam);
         t[r] = (double)(clock() - ini) / CLOCKS_PER_SEC * 1000.0;
+        if (tiempos_out) tiempos_out[r] = t[r];
     }
+
+    // Ordenamos los 5 tiempos para sacar min, max y la mediana (posicion central)
     qsort(t, NUM_REPS, sizeof(double), cmpd);
-    *vmin = t[0]; *vmax = t[NUM_REPS - 1];
-    return t[NUM_REPS / 2]; /* mediana */
+    *vmin = t[0];
+    *vmax = t[NUM_REPS - 1];
+    return t[NUM_REPS / 2];
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* Validación manual                                                           */
-/* ─────────────────────────────────────────────────────────────────────────── */
+// --- Validacion con matriz pequena 5x5 ---
 
-/* Verifica la convolución sobre una matriz 5×5 con resultados calculados a mano. */
 void validarManual() {
-    printf("-- Validacion manual --\n");
+    printf("-- Validacion manual (Matriz 5x5) --\n");
 
     /*
-     * Entrada 5x5:
+     * Matriz de prueba 5x5:
      *   10 20 30 40 50
      *   20 30 40 50 60
      *   30 40 50 60 70
      *   40 50 60 70 80
      *   50 60 70 80 90
      *
-     * Con media 3x3 y zero-padding:
-     *   Pixel central (2,2): vecinos = {30,40,50,40,50,60,50,60,70}
-     *                        suma=450, 450/9=50  → esperado: 50
-     *
-     *   Pixel esquina (0,0): vecinos con padding = {0,0,0,0,10,20,0,20,30}
-     *                        suma=80, 80/9≈8.88  → esperado: 8
+     * Calculo a mano con filtro de media 3x3 y zero-padding:
+     *   Centro (2,2): (30+40+50 + 40+50+60 + 50+60+70) / 9 = 450 / 9 = 50.0
+     *   Esquina (0,0): (0+0+0 + 0+10+20 + 0+20+30) / 9 = 80 / 9 = 8.8889 (en entero: 8)
      */
     unsigned char datos[25] = {
         10,20,30,40,50,
@@ -220,92 +236,19 @@ void validarManual() {
     };
     Imagen ent = {5, 5, datos};
     Imagen *sal = crearImagen(5, 5);
+    float crudo[25];
 
-    float m[9]; mascaraMedia(m, 3);
-    convolucionCPU(&ent, sal, m, 3);
+    float m[9];
+    mascaraMedia(m, 3);
+    convolucionCPU_Crudo(&ent, crudo, m, 3);
+    convertirCrudoAPGM(crudo, sal);
 
-    printf("  Pixel central (2,2): esperado=50  obtenido=%d  -> %s\n",
-           sal->datos[12], sal->datos[12] == 50 ? "OK" : "FALLA");
-    printf("  Pixel esquina (0,0): esperado=8   obtenido=%d  -> %s\n\n",
-           sal->datos[0],  sal->datos[0]  == 8  ? "OK" : "FALLA");
-
-    liberarImagen(sal);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* Helper para un experimento                                                  */
-/* ─────────────────────────────────────────────────────────────────────────── */
-
-void experimento(Imagen *img, float *mask, int tam, const char *filtro,
-                 const char *archivo, FILE *csv) {
-    Imagen *sal = crearImagen(img->ancho, img->alto);
-    double vmin, vmax;
-    double med = medirTiempo(img, sal, mask, tam, &vmin, &vmax);
-
-    printf("  %-12s mascara=%2dx%-2d  res=%dx%d  mediana=%.0f ms  [%.0f, %.0f]\n",
-           filtro, tam, tam, img->ancho, img->alto, med, vmin, vmax);
-    guardarPGM(archivo, sal);
-    fprintf(csv, "CPU,%s,%dx%d,%dx%d,%.1f,%.1f,%.1f\n",
-            filtro, img->ancho, img->alto, tam, tam, med, vmin, vmax);
+    printf("  Pixel central (2,2): esperado=50.0000 (50) | obtenido=%.4f (%d) -> %s\n",
+           crudo[12], sal->datos[12],
+           (fabsf(crudo[12] - 50.0f) < 1e-4f && sal->datos[12] == 50) ? "OK" : "FALLA");
+    printf("  Pixel esquina (0,0): esperado=8.8889  (8)  | obtenido=%.4f (%d) -> %s\n\n",
+           crudo[0], sal->datos[0],
+           (fabsf(crudo[0] - 80.0f/9.0f) < 1e-4f && sal->datos[0] == 8) ? "OK" : "FALLA");
 
     liberarImagen(sal);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* main                                                                        */
-/* ─────────────────────────────────────────────────────────────────────────── */
-
-int main(int argc, char *argv[]) {
-#ifdef _WIN32
-    system("if not exist resultados mkdir resultados");
-#else
-    system("mkdir -p resultados");
-#endif
-
-    Imagen *base = (argc >= 2) ? leerPGM(argv[1]) : NULL;
-    if (base) printf("Imagen base: %dx%d px\n", base->ancho, base->alto);
-    else      printf("Sin imagen base; usando gradiente sintetico.\n");
-
-    /* Máscaras de media variables */
-    float m3[9], m9[81], m21[441];
-    mascaraMedia(m3, 3); mascaraMedia(m9, 9); mascaraMedia(m21, 21);
-
-    /* Validación antes de los experimentos */
-    validarManual();
-
-    FILE *csv = fopen("resultados/resultados_cpu.csv", "w");
-    fprintf(csv, "implementacion,filtro,resolucion,mascara,mediana_ms,min_ms,max_ms\n");
-
-    /* Filtros 3x3 sobre 4000x4000 */
-    printf("[Exp 1] Filtros 3x3 sobre 4000x4000\n");
-    Imagen *i4k = prepararImagen(base, 4000, 4000);
-    experimento(i4k, m3,           3, "media",      "resultados/media_4k.pgm",      csv);
-    experimento(i4k, NITIDEZ_3,    3, "nitidez",    "resultados/nitidez_4k.pgm",    csv);
-    experimento(i4k, LAPLACIANO_3, 3, "laplaciano", "resultados/laplaciano_4k.pgm", csv);
-    liberarImagen(i4k);
-
-    /* Media 9x9 en tres resoluciones */
-    printf("[Exp 2] Resolucion con media 9x9\n");
-    Imagen *i2k = prepararImagen(base, 2000, 2000);
-    experimento(i2k, m9, 9, "media", "resultados/media9_2k.pgm", csv);
-    liberarImagen(i2k);
-    i4k = prepararImagen(base, 4000, 4000);
-    experimento(i4k, m9, 9, "media", "resultados/media9_4k.pgm", csv);
-    liberarImagen(i4k);
-    Imagen *i6k = prepararImagen(base, 6000, 6000);
-    experimento(i6k, m9, 9, "media", "resultados/media9_6k.pgm", csv);
-    liberarImagen(i6k);
-
-    /* Tres tamaños de máscara sobre 4000x4000 */
-    printf("[Exp 3] Tamano de mascara sobre 4000x4000\n");
-    i4k = prepararImagen(base, 4000, 4000);
-    experimento(i4k, m3,  3,  "media", "resultados/media3_4k.pgm",   csv);
-    experimento(i4k, m9,  9,  "media", "resultados/media9_4k_b.pgm", csv);
-    experimento(i4k, m21, 21, "media", "resultados/media21_4k.pgm",  csv);
-    liberarImagen(i4k);
-
-    fclose(csv);
-    if (base) liberarImagen(base);
-    printf("Listo. Ver resultados/resultados_cpu.csv\n");
-    return 0;
 }
