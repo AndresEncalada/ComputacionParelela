@@ -5,7 +5,7 @@
  *   nvcc -O2 -o main main.cu
  *
  * Uso:
- *   ./main [imagen.pgm]
+ *   ./main [imagen.jpg]
  */
 
 #include "cpu_conv.c"
@@ -56,10 +56,10 @@ void experimentoUnificado(Imagen *img, float *mask, int tam, const char *filtro,
         convertirCrudoAPGM(crudo_cpu, sal_cpu);
         convertirCrudoAPGM(crudo_gpu, sal_gpu);
         char ruta_cpu[256], ruta_gpu[256];
-        snprintf(ruta_cpu, sizeof(ruta_cpu), "resultados/%s_cpu.pgm", archivo_base);
-        snprintf(ruta_gpu, sizeof(ruta_gpu), "resultados/%s_gpu.pgm", archivo_base);
-        guardarPGM(ruta_cpu, sal_cpu);
-        guardarPGM(ruta_gpu, sal_gpu);
+        snprintf(ruta_cpu, sizeof(ruta_cpu), "resultados/%s_cpu.jpg", archivo_base);
+        snprintf(ruta_gpu, sizeof(ruta_gpu), "resultados/%s_gpu.jpg", archivo_base);
+        guardarImagen(ruta_cpu, sal_cpu);
+        guardarImagen(ruta_gpu, sal_gpu);
     }
 
     // Calcular aceleracion solo del kernel y aceleracion contando transferencias

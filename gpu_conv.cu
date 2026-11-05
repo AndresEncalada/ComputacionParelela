@@ -5,7 +5,9 @@
 #include <cuda_runtime.h>
 
 #define HILOS_BASE 256  // Tamano de bloque fijo para los primeros 3 experimentos
-#define TOLERANCIA 1e-4f
+// Con mascaras 9x9 (81 operaciones) o 21x21 (441), el error acumulado en float32
+// puede superar 1e-4. 1e-3 es conservador y correcto para aritmetica de precision simple.
+#define TOLERANCIA 1e-3f
 
 // Macro para verificar si alguna llamada de CUDA dio error
 #define CUDA_CHECK(call)                                                         \

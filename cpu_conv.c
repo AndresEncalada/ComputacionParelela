@@ -15,6 +15,10 @@
 #define STBI_ONLY_BMP
 #include "stb_image.h"
 
+// stb_image_write: cabecera unica para guardar imagenes en JPG, PNG, etc.
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #define NUM_REPS 5  // 5 repeticiones medidas (+ 1 previa de calentamiento)
 
 // Estructura basica para manejar la imagen en un arreglo 1D
@@ -38,8 +42,8 @@ void liberarImagen(Imagen *img) {
     free(img);
 }
 
-// Lee una imagen en formato PGM binario (P5)
-Imagen* leerPGM(const char *ruta) {
+// Lee un archivo de grises sin compresion (formato interno P5)
+static Imagen* leerGrises(const char *ruta) {
     FILE *f = fopen(ruta, "rb");
     if (!f) return NULL;
 
@@ -77,10 +81,10 @@ Imagen* leerPGM(const char *ruta) {
     return img;
 }
 
-// Carga cualquier imagen (JPG, PNG, BMP o PGM) y la devuelve en escala de grises.
+// Carga cualquier imagen (JPG, PNG, BMP) y la devuelve en escala de grises.
 // stb_image convierte automaticamente de color a gris con la formula estandar.
+// Tambien acepta archivos de grises sin compresion para compatibilidad interna.
 Imagen* leerImagen(const char *ruta) {
-    // Si la extension es .pgm usamos nuestro lector propio (garantiza compatibilidad P5)
     int n = (int)strlen(ruta);
     if (n >= 4) {
         const char *e = ruta + n - 4;
@@ -88,7 +92,7 @@ Imagen* leerImagen(const char *ruta) {
             (e[1]=='p'||e[1]=='P') &&
             (e[2]=='g'||e[2]=='G') &&
             (e[3]=='m'||e[3]=='M'))
-            return leerPGM(ruta);
+            return leerGrises(ruta);
     }
 
     // Para JPG/PNG/BMP: stbi_load con desired_channels=1 entrega gris directamente
@@ -105,12 +109,9 @@ Imagen* leerImagen(const char *ruta) {
     return img;
 }
 
-void guardarPGM(const char *ruta, Imagen *img) {
-    FILE *f = fopen(ruta, "wb");
-    if (!f) return;
-    fprintf(f, "P5\n%d %d\n255\n", img->ancho, img->alto);
-    fwrite(img->datos, 1, (size_t)img->ancho * img->alto, f);
-    fclose(f);
+// Guarda la imagen de grises en disco en formato JPG (calidad 95)
+void guardarImagen(const char *ruta, Imagen *img) {
+    stbi_write_jpg(ruta, img->ancho, img->alto, 1, img->datos, 95);
 }
 
 // Si hay imagen base, toma un recorte cuadrado del centro y lo escala a (ancho x alto)

@@ -3,4 +3,7 @@
 *.o
 *.exp
 *.lib
-resultados/*.pgm
+.vscode/
+resultados/*
+!resultados/*.csv
+!resultados/*.jpg
