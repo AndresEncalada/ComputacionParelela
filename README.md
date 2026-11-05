@@ -6,11 +6,12 @@ Convolución 2D sobre imágenes en escala de grises implementada en C (CPU) y CU
 
 | Archivo | Descripción |
 |---------|-------------|
-| `cpu_conv.c` | Lectura/escritura de imágenes, generación de máscaras y convolución secuencial en CPU |
-| `gpu_conv.cu` | Kernel CUDA 1D, validación numérica CPU vs GPU y medición de tiempos con `cudaEvent_t` |
-| `main.cu` | Programa principal: integra ambos módulos, ejecuta validaciones y los 4 experimentos |
-| `stb_image.h` | Cabecera de dominio público para leer JPG/PNG/BMP (sin dependencias externas) |
-| `stb_image_write.h` | Cabecera de dominio público para escribir JPG (sin dependencias externas) |
+| `src/cpu_conv.c` | Lectura/escritura de imágenes, generación de máscaras y convolución secuencial en CPU |
+| `src/gpu_conv.cu` | Kernel CUDA 1D, validación numérica CPU vs GPU y medición de tiempos con `cudaEvent_t` |
+| `src/main.cu` | Programa principal: integra ambos módulos, ejecuta validaciones y los 4 experimentos |
+| `include/stb_image.h` | Cabecera de dominio público para leer JPG/PNG/BMP (sin dependencias externas) |
+| `include/stb_image_write.h` | Cabecera de dominio público para escribir JPG (sin dependencias externas) |
+| `analisis/grafico.ipynb` | Notebook en Python para generar las gráficas de los 4 experimentos |
 
 ## Filtros implementados
 
@@ -31,7 +32,7 @@ Manejo de bordes: zero-padding (los píxeles fuera de la imagen se tratan como 0
 ## Compilación
 
 ```bash
-nvcc -O2 -diag-suppress 550 -o main main.cu
+nvcc -O2 -Iinclude -diag-suppress 550 -o main src/main.cu
 ```
 
 La bandera `-diag-suppress 550` silencia advertencias de variables sin usar generadas internamente por stb_image.
@@ -85,4 +86,4 @@ Los resultados se guardan en `resultados/`:
 
 ### Generar gráficas
 
-Los CSV pueden abrirse directamente en Excel, LibreOffice Calc o cualquier herramienta de análisis de datos. Para graficar en Python revise el archivo `grafico.ipynb`.
+Los CSV pueden abrirse directamente en Excel, LibreOffice Calc o cualquier herramienta de análisis de datos. Para graficar en Python revise el archivo `analisis/grafico.ipynb`.
