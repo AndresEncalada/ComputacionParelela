@@ -4,6 +4,10 @@
 *.exp
 *.lib
 .vscode/
+.venv/
+venv/
+__pycache__/
+*.pyc
 resultados/*
 !resultados/*.csv
 !resultados/*.jpg
