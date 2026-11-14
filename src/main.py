@@ -1,6 +1,6 @@
 """
 main.py - Programa principal que ejecuta CPU (cpu_conv.py) y GPU (gpu_conv.py)
-Traduccion directa de src/main.cu a Python.
+Traduccion directa de src/main.cu a Python puro.
 
 Uso:
     python3 src/main.py [imagen.jpg]
@@ -13,7 +13,6 @@ import math
 import os
 import sys
 from typing import Any, TextIO
-import numpy as np
 
 from cpu_conv import (
     LAPLACIANO_3,
@@ -34,29 +33,32 @@ from cpu_conv import (
 
 try:
     _gpu_mod: Any = importlib.import_module("gpu_conv")
-    _HAS_GPU_CONV = True
 except ImportError:
     _gpu_mod = None
-    _HAS_GPU_CONV = False
 
 HILOS_BASE: int = getattr(_gpu_mod, "HILOS_BASE", 256)
 TOLERANCIA: float = getattr(_gpu_mod, "TOLERANCIA", 1e-3)
 
 
 def _comparar_cpu_vs_gpu_local(
-    cpu_crudo: np.ndarray,
-    gpu_crudo: np.ndarray,
+    cpu_crudo: list[float],
+    gpu_crudo: list[float],
     n: int,
 ) -> tuple[float, float]:
-    if n <= 0:
-        return 0.0, 0.0
-    diff = np.abs(cpu_crudo[:n].astype(np.float64) - gpu_crudo[:n].astype(np.float64))
-    return float(np.max(diff)), float(np.mean(diff))
+    max_e = 0.0
+    suma_e = 0.0
+    for i in range(n):
+        diff = abs(float(cpu_crudo[i]) - float(gpu_crudo[i]))
+        if diff > max_e:
+            max_e = diff
+        suma_e += diff
+    mae = (suma_e / n) if n > 0 else 0.0
+    return max_e, mae
 
 
 def comparar_cpu_vs_gpu(
-    cpu_crudo: np.ndarray,
-    gpu_crudo: np.ndarray,
+    cpu_crudo: list[float],
+    gpu_crudo: list[float],
     n: int,
 ) -> tuple[float, float]:
     fn = getattr(_gpu_mod, "comparar_cpu_vs_gpu", None) or getattr(
@@ -88,8 +90,8 @@ def validar_manual_cpu_gpu() -> None:
 
 def medir_tiempo_gpu(
     ent: Imagen,
-    h_salida_cruda: np.ndarray,
-    mask: np.ndarray,
+    h_salida_cruda: list[float],
+    mask: list[float],
     tam: int,
     hilos_bloque: int,
     filtro: str,
@@ -99,7 +101,8 @@ def medir_tiempo_gpu(
         _gpu_mod, "medirTiempoGPU", None
     )
     if fn is None:
-        h_salida_cruda[:] = 0.0
+        for i in range(len(h_salida_cruda)):
+            h_salida_cruda[i] = 0.0
         return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
     res = fn(ent, h_salida_cruda, mask, tam, hilos_bloque, filtro, csv_crudo)
@@ -115,37 +118,14 @@ def mostrar_info_gpu() -> None:
         fn()
         return
 
-    try:
-        from numba import cuda
-
-        if cuda.is_available():
-            dev = cuda.get_current_device()
-            cc = dev.compute_capability
-            _, total_mem = cuda.current_context().get_memory_info()
-            nombre = (
-                dev.name.decode("utf-8")
-                if isinstance(dev.name, bytes)
-                else str(dev.name)
-            )
-            print(
-                f"GPU detectada: {nombre} | Compute Capability: {cc[0]}.{cc[1]} | "
-                f"VRAM: {total_mem / (1024.0 * 1024.0):.0f} MB"
-            )
-            print(
-                "Nota: cudaMalloc y cudaFree estan excluidos de la medicion de tiempos.\n"
-            )
-            return
-    except Exception:
-        pass
-
-    print("GPU detectada: (pendiente de gpu_conv.py / CUDA runtime)")
+    print("GPU detectada: (pendiente de gpu_conv.py)")
     print("Nota: cudaMalloc y cudaFree estan excluidos de la medicion de tiempos.\n")
 
 
 def _guardar_imagenes_salida(
     archivo_base: str | None,
-    crudo_cpu: np.ndarray,
-    crudo_gpu: np.ndarray,
+    crudo_cpu: list[float],
+    crudo_gpu: list[float],
     sal_cpu: Imagen,
     sal_gpu: Imagen,
 ) -> None:
@@ -161,7 +141,7 @@ def _guardar_imagenes_salida(
 # compara los arreglos en float para sacar el error y guarda todo en el CSV.
 def experimento_unificado(
     img: Imagen,
-    mask: np.ndarray,
+    mask: list[float],
     tam: int,
     filtro: str,
     hilos_bloque: int,
@@ -172,12 +152,14 @@ def experimento_unificado(
     n = img.ancho * img.alto
     sal_cpu = crear_imagen(img.ancho, img.alto)
     sal_gpu = crear_imagen(img.ancho, img.alto)
-    crudo_cpu = np.zeros(n, dtype=np.float32)
-    crudo_gpu = np.zeros(n, dtype=np.float32)
+    crudo_cpu = [0.0] * n
+    crudo_gpu = [0.0] * n
 
     # 1. Medir en CPU (1 calentamiento + 5 repeticiones)
     t_cpu = [0.0] * NUM_REPS
-    med_cpu = medir_tiempo(img, crudo_cpu, mask, tam, t_cpu)
+    vmin_c = [0.0]
+    vmax_c = [0.0]
+    med_cpu = medir_tiempo(img, crudo_cpu, mask, tam, t_cpu, vmin_c, vmax_c)
 
     for r in range(NUM_REPS):
         csv_crudo.write(
@@ -185,13 +167,19 @@ def experimento_unificado(
             f"1_hilo_secuencial,{r + 1},{t_cpu[r]:.4f},ms\n"
         )
 
-    # Calcular desviacion estandar e IQR de CPU
-    media_c = sum(t_cpu) / NUM_REPS
-    var_c = sum((t - media_c) ** 2 for t in t_cpu)
+    # Calcular desviacion estandar e IQR de CPU manualmente como en main.cu
+    suma_c = 0.0
+    for i in range(NUM_REPS):
+        suma_c += t_cpu[i]
+    media_c = suma_c / NUM_REPS
+
+    var_c = 0.0
+    for i in range(NUM_REPS):
+        var_c += (t_cpu[i] - media_c) * (t_cpu[i] - media_c)
     std_cpu = math.sqrt(var_c / (NUM_REPS - 1))
 
-    t_cpu_ord = sorted(t_cpu)
-    iqr_cpu = t_cpu_ord[3] - t_cpu_ord[1]
+    t_cpu.sort()
+    iqr_cpu = t_cpu[3] - t_cpu[1]
 
     # 2. Medir en GPU por separado: H2D, Kernel, D2H y tiempo conjunto
     (
@@ -253,9 +241,9 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin imagen base; usando gradiente sintetico.\n")
 
     # Crear las mascaras de media para 3x3, 9x9 y 21x21
-    m3 = np.zeros(9, dtype=np.float32)
-    m9 = np.zeros(81, dtype=np.float32)
-    m21 = np.zeros(441, dtype=np.float32)
+    m3 = [0.0] * 9
+    m9 = [0.0] * 81
+    m21 = [0.0] * 441
     mascara_media(m3, 3)
     mascara_media(m9, 9)
     mascara_media(m21, 21)

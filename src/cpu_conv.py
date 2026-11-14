@@ -1,6 +1,5 @@
 """
-cpu_conv.py - Funciones de imagen, mascaras y convolucion 2D secuencial en CPU
-Traduccion directa de src/cpu_conv.c a Python.
+cpu_conv.py - Funciones de imagen, mascaras y convolucion 2D secuencial en CPU.
 """
 
 from __future__ import annotations
@@ -10,14 +9,7 @@ import os
 import re
 import sys
 import time
-import numpy as np
-from PIL import Image
-
-try:
-    from numba import njit
-    _HAS_NUMBA = True
-except ImportError:
-    _HAS_NUMBA = False
+from PIL import Image  # Equivalente a stb_image.h / stb_image_write.h solo para leer/guardar JPG
 
 NUM_REPS = 5  # 5 repeticiones medidas (+ 1 previa de calentamiento)
 
@@ -34,17 +26,16 @@ _PGM_HEADER_RE = re.compile(
 class Imagen:
     ancho: int
     alto: int
-    datos: np.ndarray
+    datos: bytearray
 
 
 def crear_imagen(ancho: int, alto: int) -> Imagen:
-    datos = np.zeros(ancho * alto, dtype=np.uint8)
-    return Imagen(ancho=ancho, alto=alto, datos=datos)
+    return Imagen(ancho=ancho, alto=alto, datos=bytearray(ancho * alto))
 
 
 def liberar_imagen(img: Imagen | None) -> None:
     if img is not None:
-        img.datos = None
+        img.datos = bytearray()
 
 
 # Lee un archivo de grises sin compresion (formato interno P5)
@@ -69,8 +60,10 @@ def leer_grises(ruta: str) -> Imagen | None:
     if len(bloque) != esperados:
         return None
 
-    datos = np.frombuffer(bloque, dtype=np.uint8).copy()
-    return Imagen(ancho=ancho, alto=alto, datos=datos)
+    img = crear_imagen(ancho, alto)
+    for i in range(esperados):
+        img.datos[i] = bloque[i]
+    return img
 
 
 # Carga cualquier imagen (JPG, PNG, BMP) y la devuelve en escala de grises.
@@ -83,8 +76,12 @@ def leer_imagen(ruta: str) -> Imagen | None:
         with Image.open(ruta) as pil_img:
             gris = pil_img.convert("L")
             ancho, alto = gris.size
-            datos = np.asarray(gris, dtype=np.uint8).reshape(-1).copy()
-            return Imagen(ancho=ancho, alto=alto, datos=datos)
+            raw = gris.tobytes()
+            img = crear_imagen(ancho, alto)
+            n = ancho * alto
+            for i in range(n):
+                img.datos[i] = raw[i]
+            return img
     except Exception as exc:
         print(f"No se pudo leer la imagen '{ruta}': {exc}", file=sys.stderr)
         return None
@@ -92,9 +89,26 @@ def leer_imagen(ruta: str) -> Imagen | None:
 
 # Guarda la imagen de grises en disco en formato JPG (calidad 95)
 def guardar_imagen(ruta: str, img: Imagen) -> None:
-    arr_2d = img.datos.reshape((img.alto, img.ancho))
-    pil_img = Image.fromarray(arr_2d, mode="L")
+    pil_img = Image.frombytes("L", (img.ancho, img.alto), bytes(img.datos))
     pil_img.save(ruta, format="JPEG", quality=95)
+
+
+def _escalar_recorte_central(base: Imagen, img: Imagen, ancho: int, alto: int) -> None:
+    lado = base.ancho if base.ancho < base.alto else base.alto
+    ox = (base.ancho - lado) // 2
+    oy = (base.alto - lado) // 2
+
+    for y in range(alto):
+        src_y = oy + (y * lado) // alto
+        for x in range(ancho):
+            src_x = ox + (x * lado) // ancho
+            img.datos[y * ancho + x] = base.datos[src_y * base.ancho + src_x]
+
+
+def _llenar_gradiente_diagonal(img: Imagen, ancho: int, alto: int) -> None:
+    for y in range(alto):
+        for x in range(ancho):
+            img.datos[y * ancho + x] = ((x + y) * 255) // (ancho + alto)
 
 
 # Si hay imagen base, toma un recorte cuadrado del centro y lo escala a (ancho x alto)
@@ -102,163 +116,110 @@ def guardar_imagen(ruta: str, img: Imagen) -> None:
 def preparar_imagen(base: Imagen | None, ancho: int, alto: int) -> Imagen:
     img = crear_imagen(ancho, alto)
     if base is not None and base.ancho > 0 and base.alto > 0:
-        lado = min(base.ancho, base.alto)
-        ox = (base.ancho - lado) // 2
-        oy = (base.alto - lado) // 2
-
-        y = np.arange(alto, dtype=np.int64)
-        x = np.arange(ancho, dtype=np.int64)
-        src_y = oy + (y * lado) // alto
-        src_x = ox + (x * lado) // ancho
-
-        base_2d = base.datos.reshape((base.alto, base.ancho))
-        recorte = base_2d[np.ix_(src_y, src_x)]
-        img.datos[:] = recorte.reshape(-1)
+        _escalar_recorte_central(base, img, ancho, alto)
     else:
-        y = np.arange(alto, dtype=np.int64)[:, None]
-        x = np.arange(ancho, dtype=np.int64)[None, :]
-        grad = ((x + y) * 255) // (ancho + alto)
-        img.datos[:] = grad.astype(np.uint8).reshape(-1)
-
+        _llenar_gradiente_diagonal(img, ancho, alto)
     return img
 
 
 # --- Definicion de mascaras ---
 
 # Filtro de media 3x3: promedia los 9 vecinos para suavizar la imagen
-MEDIA_3 = np.array(
-    [
-        1 / 9.0, 1 / 9.0, 1 / 9.0,
-        1 / 9.0, 1 / 9.0, 1 / 9.0,
-        1 / 9.0, 1 / 9.0, 1 / 9.0,
-    ],
-    dtype=np.float32,
-)
+MEDIA_3: list[float] = [
+    1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0,
+    1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0,
+    1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0,
+]
 
 # Filtro de nitidez 3x3: refuerza el pixel central y resta los lados
-NITIDEZ_3 = np.array(
-    [
-         0.0, -1.0,  0.0,
-        -1.0,  5.0, -1.0,
-         0.0, -1.0,  0.0,
-    ],
-    dtype=np.float32,
-)
+NITIDEZ_3: list[float] = [
+     0.0, -1.0,  0.0,
+    -1.0,  5.0, -1.0,
+     0.0, -1.0,  0.0,
+]
 
 # Filtro Laplaciano 3x3: detecta cambios bruscos de intensidad (bordes)
-LAPLACIANO_3 = np.array(
-    [
-        0.0,  1.0, 0.0,
-        1.0, -4.0, 1.0,
-        0.0,  1.0, 0.0,
-    ],
-    dtype=np.float32,
-)
+LAPLACIANO_3: list[float] = [
+    0.0,  1.0, 0.0,
+    1.0, -4.0, 1.0,
+    0.0,  1.0, 0.0,
+]
 
 
 # Llena una mascara de media de tamano k x k donde cada valor es 1/(k*k)
-def mascara_media(m: np.ndarray | int, k: int | None = None) -> np.ndarray:
-    if k is None and isinstance(m, int):
-        k = m
-        m = np.empty(k * k, dtype=np.float32)
-    v = np.float32(1.0 / (k * k))
-    m[: k * k] = v
-    return m
+def mascara_media(m: list[float], k: int) -> None:
+    v = 1.0 / (k * k)
+    for i in range(k * k):
+        m[i] = v
 
 
 # --- Funciones de convolucion ---
 
-if _HAS_NUMBA:
-    @njit(cache=True)
-    def _calcular_pixel_conv(
-        datos: np.ndarray,
-        ancho: int,
-        alto: int,
-        fila: int,
-        col: int,
-        mascara: np.ndarray,
-        tam: int,
-        mitad: int,
-    ) -> np.float32:
-        suma = np.float32(0.0)
-        for ky in range(tam):
-            for kx in range(tam):
-                y = fila + ky - mitad
-                x = col + kx - mitad
-                if 0 <= x < ancho and 0 <= y < alto:
-                    pixel = np.float32(datos[y * ancho + x])
-                    suma = np.float32(suma + pixel * mascara[ky * tam + kx])
-        return suma
+def _calcular_pixel_conv(
+    datos: bytearray,
+    ancho: int,
+    alto: int,
+    fila: int,
+    col: int,
+    mascara: list[float],
+    tam: int,
+    mitad: int,
+) -> float:
+    suma = 0.0
+    # Recorrer la vecindad de tam x tam alrededor de (fila, col)
+    for ky in range(tam):
+        for kx in range(tam):
+            y = fila + ky - mitad
+            x = col + kx - mitad
 
-    @njit(cache=True)
-    def _convolucion_cpu_crudo_kernel(
-        datos: np.ndarray,
-        ancho: int,
-        alto: int,
-        salida_cruda: np.ndarray,
-        mascara: np.ndarray,
-        tam: int,
-    ) -> None:
-        mitad = tam // 2
-        for fila in range(alto):
-            for col in range(ancho):
-                salida_cruda[fila * ancho + col] = _calcular_pixel_conv(
-                    datos, ancho, alto, fila, col, mascara, tam, mitad
-                )
-else:
-    def _convolucion_cpu_crudo_kernel(
-        datos: np.ndarray,
-        ancho: int,
-        alto: int,
-        salida_cruda: np.ndarray,
-        mascara: np.ndarray,
-        tam: int,
-    ) -> None:
-        mitad = tam // 2
-        ent_2d = datos.reshape((alto, ancho)).astype(np.float32)
-        padded = np.pad(ent_2d, mitad, mode="constant", constant_values=0.0)
-        sal_2d = salida_cruda.reshape((alto, ancho))
-        sal_2d.fill(0.0)
-        mask_f32 = mascara.astype(np.float32)
+            # Zero-padding: si el vecino cae fuera de la imagen, vale 0
+            pixel = 0
+            if 0 <= x < ancho and 0 <= y < alto:
+                pixel = datos[y * ancho + x]
 
-        for ky in range(tam):
-            for kx in range(tam):
-                peso = mask_f32[ky * tam + kx]
-                sal_2d += padded[ky : ky + alto, kx : kx + ancho] * peso
+            suma += float(pixel) * mascara[ky * tam + kx]
+    return suma
 
 
-# Aplica la convolucion y guarda el resultado en float32 sin recortar a [0, 255].
+# Aplica la convolucion y guarda el resultado en float sin recortar a [0, 255].
 # Esto permite comparar los decimales exactos contra la GPU antes de guardar la imagen.
 def convolucion_cpu_crudo(
     entrada: Imagen,
-    salida_cruda: np.ndarray,
-    mascara: np.ndarray,
+    salida_cruda: list[float],
+    mascara: list[float],
     tam: int,
 ) -> None:
-    mask_f32 = np.asarray(mascara, dtype=np.float32)
-    _convolucion_cpu_crudo_kernel(
-        entrada.datos,
-        entrada.ancho,
-        entrada.alto,
-        salida_cruda,
-        mask_f32,
-        tam,
-    )
+    mitad = tam // 2  # Desplazamiento desde el centro de la mascara
+    ancho = entrada.ancho
+    alto = entrada.alto
+    datos = entrada.datos
+
+    for fila in range(alto):
+        for col in range(ancho):
+            salida_cruda[fila * ancho + col] = _calcular_pixel_conv(
+                datos, ancho, alto, fila, col, mascara, tam, mitad
+            )
 
 
-# Limita los valores al rango [0, 255] (clamp) y los pasa a unsigned char (uint8)
-def convertir_crudo_a_pgm(salida_cruda: np.ndarray, salida: Imagen) -> None:
+# Limita los valores al rango [0, 255] (clamp) y los pasa a unsigned char para la salida
+def convertir_crudo_a_pgm(salida_cruda: list[float], salida: Imagen) -> None:
     n = salida.ancho * salida.alto
-    salida.datos[:n] = np.clip(salida_cruda[:n], 0.0, 255.0).astype(np.uint8)
+    for i in range(n):
+        v = salida_cruda[i]
+        if v < 0.0:
+            v = 0.0
+        if v > 255.0:
+            v = 255.0
+        salida.datos[i] = int(v)
 
 
 def convolucion_cpu(
     entrada: Imagen,
     salida: Imagen,
-    mascara: np.ndarray,
+    mascara: list[float],
     tam: int,
 ) -> None:
-    crudo = np.empty(entrada.ancho * entrada.alto, dtype=np.float32)
+    crudo = [0.0] * (entrada.ancho * entrada.alto)
     convolucion_cpu_crudo(entrada, crudo, mascara, tam)
     convertir_crudo_a_pgm(crudo, salida)
 
@@ -269,14 +230,14 @@ def convolucion_cpu(
 # Devuelve la mediana en milisegundos.
 def medir_tiempo(
     ent: Imagen,
-    sal_cruda: np.ndarray,
-    mask: np.ndarray,
+    sal_cruda: list[float],
+    mask: list[float],
     tam: int,
-    tiempos_out: list[float] | np.ndarray | None = None,
+    tiempos_out: list[float] | None = None,
     vmin: list[float] | None = None,
     vmax: list[float] | None = None,
 ) -> float:
-    t = np.zeros(NUM_REPS, dtype=np.float64)
+    t = [0.0] * NUM_REPS
     convolucion_cpu_crudo(ent, sal_cruda, mask, tam)  # Calentamiento no medido
 
     for r in range(NUM_REPS):
@@ -284,14 +245,15 @@ def medir_tiempo(
         convolucion_cpu_crudo(ent, sal_cruda, mask, tam)
         t[r] = (time.perf_counter() - ini) * 1000.0
         if tiempos_out is not None:
-            tiempos_out[r] = float(t[r])
+            tiempos_out[r] = t[r]
 
-    t_ord = np.sort(t)
+    # Ordenamos los 5 tiempos para sacar min, max y la mediana (posicion central)
+    t.sort()
     if vmin:
-        vmin[0] = float(t_ord[0])
+        vmin[0] = t[0]
     if vmax:
-        vmax[0] = float(t_ord[NUM_REPS - 1])
-    return float(t_ord[NUM_REPS // 2])
+        vmax[0] = t[NUM_REPS - 1]
+    return t[NUM_REPS // 2]
 
 
 # --- Validacion con matriz pequena 5x5 ---
@@ -309,34 +271,33 @@ def validar_manual() -> None:
     # Calculo a mano con filtro de media 3x3 y zero-padding:
     #   Centro (2,2): (30+40+50 + 40+50+60 + 50+60+70) / 9 = 450 / 9 = 50.0
     #   Esquina (0,0): (0+0+0 + 0+10+20 + 0+20+30) / 9 = 80 / 9 = 8.8889 (en entero: 8)
-    datos = np.array(
+    datos = bytearray(
         [
             10, 20, 30, 40, 50,
             20, 30, 40, 50, 60,
             30, 40, 50, 60, 70,
             40, 50, 60, 70, 80,
             50, 60, 70, 80, 90,
-        ],
-        dtype=np.uint8,
+        ]
     )
     ent = Imagen(ancho=5, alto=5, datos=datos)
     sal = crear_imagen(5, 5)
-    crudo = np.zeros(25, dtype=np.float32)
+    crudo = [0.0] * 25
 
-    m = np.zeros(9, dtype=np.float32)
+    m = [0.0] * 9
     mascara_media(m, 3)
     convolucion_cpu_crudo(ent, crudo, m, 3)
     convertir_crudo_a_pgm(crudo, sal)
 
-    ok_centro = (abs(float(crudo[12]) - 50.0) < 1e-4) and (int(sal.datos[12]) == 50)
-    ok_esquina = (abs(float(crudo[0]) - (80.0 / 9.0)) < 1e-4) and (int(sal.datos[0]) == 8)
+    ok_centro = (abs(crudo[12] - 50.0) < 1e-4) and (sal.datos[12] == 50)
+    ok_esquina = (abs(crudo[0] - (80.0 / 9.0)) < 1e-4) and (sal.datos[0] == 8)
 
     print(
-        f"  Pixel central (2,2): esperado=50.0000 (50) | obtenido={crudo[12]:.4f} ({int(sal.datos[12])}) -> "
+        f"  Pixel central (2,2): esperado=50.0000 (50) | obtenido={crudo[12]:.4f} ({sal.datos[12]}) -> "
         f"{'OK' if ok_centro else 'FALLA'}"
     )
     print(
-        f"  Pixel esquina (0,0): esperado=8.8889  (8)  | obtenido={crudo[0]:.4f} ({int(sal.datos[0])}) -> "
+        f"  Pixel esquina (0,0): esperado=8.8889  (8)  | obtenido={crudo[0]:.4f} ({sal.datos[0]}) -> "
         f"{'OK' if ok_esquina else 'FALLA'}\n"
     )
 
