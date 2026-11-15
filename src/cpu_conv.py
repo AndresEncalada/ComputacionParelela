@@ -12,6 +12,7 @@ import time
 from PIL import Image  # Equivalente a stb_image.h / stb_image_write.h solo para leer/guardar JPG
 
 NUM_REPS = 5  # 5 repeticiones medidas (+ 1 previa de calentamiento)
+LIMITE_CPU_SEG = 1800.0  # Limite de 30 minutos por configuracion en CPU
 
 _PGM_HEADER_RE = re.compile(
     rb"^P5\s+(?:#[^\r\n]*[\r\n]+\s*)*(\d+)\s+"
@@ -124,13 +125,6 @@ def preparar_imagen(base: Imagen | None, ancho: int, alto: int) -> Imagen:
 
 # --- Definicion de mascaras ---
 
-# Filtro de media 3x3: promedia los 9 vecinos para suavizar la imagen
-MEDIA_3: list[float] = [
-    1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0,
-    1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0,
-    1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0,
-]
-
 # Filtro de nitidez 3x3: refuerza el pixel central y resta los lados
 NITIDEZ_3: list[float] = [
      0.0, -1.0,  0.0,
@@ -182,13 +176,14 @@ def _calcular_pixel_conv(
 
 
 # Aplica la convolucion y guarda el resultado en float sin recortar a [0, 255].
-# Esto permite comparar los decimales exactos contra la GPU antes de guardar la imagen.
+# Si se pasa tiempo_limite_abs (perf_counter), interrumpe al superar el limite y retorna False.
 def convolucion_cpu_crudo(
     entrada: Imagen,
     salida_cruda: list[float],
     mascara: list[float],
     tam: int,
-) -> None:
+    tiempo_limite_abs: float | None = None,
+) -> bool:
     mitad = tam // 2  # Desplazamiento desde el centro de la mascara
     ancho = entrada.ancho
     alto = entrada.alto
@@ -199,6 +194,9 @@ def convolucion_cpu_crudo(
             salida_cruda[fila * ancho + col] = _calcular_pixel_conv(
                 datos, ancho, alto, fila, col, mascara, tam, mitad
             )
+        if tiempo_limite_abs is not None and time.perf_counter() >= tiempo_limite_abs:
+            return False
+    return True
 
 
 # Limita los valores al rango [0, 255] (clamp) y los pasa a unsigned char para la salida
@@ -213,47 +211,43 @@ def convertir_crudo_a_pgm(salida_cruda: list[float], salida: Imagen) -> None:
         salida.datos[i] = int(v)
 
 
-def convolucion_cpu(
-    entrada: Imagen,
-    salida: Imagen,
-    mascara: list[float],
-    tam: int,
-) -> None:
-    crudo = [0.0] * (entrada.ancho * entrada.alto)
-    convolucion_cpu_crudo(entrada, crudo, mascara, tam)
-    convertir_crudo_a_pgm(crudo, salida)
-
-
 # --- Medicion de tiempos ---
 
-# Hace 1 corrida de calentamiento y luego mide NUM_REPS repeticiones.
-# Devuelve la mediana en milisegundos.
+# Hace 1 corrida de calentamiento y luego mide hasta NUM_REPS repeticiones.
+# Si la configuracion supera limite_seg (por defecto 30 min), interrumpe y devuelve
+# (0.0, "no_completada", tiempo_transcurrido_ms).
 def medir_tiempo(
     ent: Imagen,
     sal_cruda: list[float],
     mask: list[float],
     tam: int,
     tiempos_out: list[float] | None = None,
-    vmin: list[float] | None = None,
-    vmax: list[float] | None = None,
-) -> float:
-    t = [0.0] * NUM_REPS
-    convolucion_cpu_crudo(ent, sal_cruda, mask, tam)  # Calentamiento no medido
+    limite_seg: float | None = LIMITE_CPU_SEG,
+) -> tuple[float, str, float]:
+    t: list[float] = []
+    ini_global = time.perf_counter()
+    tiempo_limite_abs = (ini_global + limite_seg) if limite_seg is not None else None
+
+    # Calentamiento no medido
+    if not convolucion_cpu_crudo(ent, sal_cruda, mask, tam, tiempo_limite_abs):
+        transcurrido_ms = (time.perf_counter() - ini_global) * 1000.0
+        return 0.0, "no_completada", transcurrido_ms
 
     for r in range(NUM_REPS):
         ini = time.perf_counter()
-        convolucion_cpu_crudo(ent, sal_cruda, mask, tam)
-        t[r] = (time.perf_counter() - ini) * 1000.0
+        ok = convolucion_cpu_crudo(ent, sal_cruda, mask, tam, tiempo_limite_abs)
+        dt_ms = (time.perf_counter() - ini) * 1000.0
+        if not ok:
+            transcurrido_ms = (time.perf_counter() - ini_global) * 1000.0
+            return 0.0, "no_completada", transcurrido_ms
+        t.append(dt_ms)
         if tiempos_out is not None:
-            tiempos_out[r] = t[r]
+            tiempos_out[r] = dt_ms
 
-    # Ordenamos los 5 tiempos para sacar min, max y la mediana (posicion central)
+    transcurrido_ms = (time.perf_counter() - ini_global) * 1000.0
+    # Ordenamos los 5 tiempos para sacar la mediana (posicion central)
     t.sort()
-    if vmin:
-        vmin[0] = t[0]
-    if vmax:
-        vmax[0] = t[NUM_REPS - 1]
-    return t[NUM_REPS // 2]
+    return t[NUM_REPS // 2], "completada", transcurrido_ms
 
 
 # --- Validacion con matriz pequena 5x5 ---

@@ -5,11 +5,16 @@ gpu_conv.py - Kernel CUDA 1D y medicion de tiempos en GPU (PyCUDA).
 from __future__ import annotations
 
 import math
+import time
 import warnings
 from typing import TextIO
 
 import numpy as np
+
+_t_ctx_ini = time.perf_counter()
 import pycuda.autoinit  # Crea el contexto CUDA sobre la GPU 0 (equivale al contexto implicito de CUDA C)
+TIEMPO_INIT_CTX_MS = (time.perf_counter() - _t_ctx_ini) * 1000.0
+
 import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
 
@@ -76,10 +81,12 @@ __global__ void kernelConvolucionGPU(const unsigned char *entrada,
 # PyCUDA compila el kernel con nvcc al importar el modulo.
 # En Windows, cl.exe imprime el nombre del archivo ("kernel.cu") y PyCUDA lo muestra
 # como advertencia aunque la compilacion fue correcta; solo se oculta ese aviso.
+_t_comp_ini = time.perf_counter()
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", message="The CUDA compiler succeeded")
     _modulo = SourceModule(_KERNEL_SRC)
 kernelConvolucionGPU = _modulo.get_function("kernelConvolucionGPU")
+TIEMPO_COMPILACION_MS = (time.perf_counter() - _t_comp_ini) * 1000.0
 
 
 # --- Informacion de la GPU ---
@@ -92,7 +99,11 @@ def mostrar_info_gpu() -> None:
         f"GPU detectada: {prop.name()} | Compute Capability: {major}.{minor} | "
         f"VRAM: {prop.total_memory() / (1024.0 * 1024.0):.0f} MB"
     )
-    print("Nota: cudaMalloc y cudaFree estan excluidos de la medicion de tiempos.\n")
+    print(
+        f"Preparacion GPU: init_contexto={TIEMPO_INIT_CTX_MS:.2f} ms | "
+        f"compilacion_kernel={TIEMPO_COMPILACION_MS:.2f} ms"
+    )
+    print("Nota: cudaMalloc (mem_alloc) y cudaFree (free) estan excluidos de la medicion de tiempos.\n")
 
 
 # --- Validacion numerica ---
@@ -238,10 +249,10 @@ def medir_tiempo_gpu(
         t_tot[r] = ms_h2d + ms_ker + ms_d2h
 
         if csv_crudo:
-            csv_crudo.write(f"GPU_H2D,{filtro},{ent.ancho}x{ent.alto},{tam}x{tam},{cfg},{r + 1},{t_h2d[r]:.4f},ms\n")
-            csv_crudo.write(f"GPU_Kernel,{filtro},{ent.ancho}x{ent.alto},{tam}x{tam},{cfg},{r + 1},{t_ker[r]:.4f},ms\n")
-            csv_crudo.write(f"GPU_D2H,{filtro},{ent.ancho}x{ent.alto},{tam}x{tam},{cfg},{r + 1},{t_d2h[r]:.4f},ms\n")
-            csv_crudo.write(f"GPU_Conjunto,{filtro},{ent.ancho}x{ent.alto},{tam}x{tam},{cfg},{r + 1},{t_tot[r]:.4f},ms\n")
+            csv_crudo.write(f"GPU_H2D,{filtro},{ent.ancho}x{ent.alto},{tam}x{tam},{cfg},{r + 1},{t_h2d[r]:.4f},ms,completada\n")
+            csv_crudo.write(f"GPU_Kernel,{filtro},{ent.ancho}x{ent.alto},{tam}x{tam},{cfg},{r + 1},{t_ker[r]:.4f},ms,completada\n")
+            csv_crudo.write(f"GPU_D2H,{filtro},{ent.ancho}x{ent.alto},{tam}x{tam},{cfg},{r + 1},{t_d2h[r]:.4f},ms,completada\n")
+            csv_crudo.write(f"GPU_Conjunto,{filtro},{ent.ancho}x{ent.alto},{tam}x{tam},{cfg},{r + 1},{t_tot[r]:.4f},ms,completada\n")
 
     # Calcular desviacion estandar del tiempo total y del kernel
     suma_tot = 0.0
