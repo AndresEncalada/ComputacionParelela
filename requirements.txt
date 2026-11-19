@@ -1,3 +1,2 @@
-numpy==2.5.4
-pillow==13.0.0
-pycuda==2026.1
+# Instala todo el proyecto
+-r experimentos/requirements.txt
