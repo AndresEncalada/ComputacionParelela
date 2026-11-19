@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>App de Filtros</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+</head>
+<body>
+  <header class="barra">
+    <div class="barra__contenido">
+      <div class="marca">
+        <span class="marca__logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1.1" class="relleno"/></svg>
+        </span>
+        <span class="marca__texto">App de Filtros</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="contenedor">
+    <section class="editor">
+      <!-- Tarjeta de imagen (tipo publicacion) -->
+      <article class="tarjeta tarjeta--imagen">
+        <div class="tarjeta__cabecera">
+          <span class="avatar" aria-hidden="true"></span>
+          <div class="tarjeta__titulos">
+            <strong id="nombre-archivo">Nueva imagen</strong>
+            <small id="info-archivo">JPG, PNG, BMP o PGM · máx. 25 MB</small>
+          </div>
+          <button type="button" class="boton-texto" id="btn-cambiar" hidden>Cambiar</button>
+        </div>
+
+        <label class="zona-carga" id="zona-carga" for="input-imagen">
+          <input type="file" id="input-imagen" accept="image/jpeg,image/png,image/bmp,.pgm" hidden>
+          <div class="zona-carga__vacio" id="zona-vacia">
+            <svg class="zona-carga__icono" viewBox="0 0 48 48" aria-hidden="true">
+              <rect x="6" y="9" width="36" height="30" rx="6"/>
+              <circle cx="17" cy="20" r="3.5"/>
+              <path d="M6 33l10-9 8 7 6-5 12 10"/>
+            </svg>
+            <p class="zona-carga__titulo">Arrastra una imagen aquí</p>
+            <span class="boton boton--secundario">Seleccionar del equipo</span>
+          </div>
+          <img id="vista-previa" class="zona-carga__imagen" alt="Imagen cargada" hidden>
+        </label>
+      </article>
+
+      <!-- Panel de edicion -->
+      <aside class="tarjeta tarjeta--panel">
+        <h2 class="panel__titulo">Filtro</h2>
+
+        <div class="carrusel">
+          <button type="button" class="carrusel__flecha carrusel__flecha--izq" id="flecha-izq" aria-label="Anterior">
+            <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+          </button>
+          <ul class="carrusel__pista" id="carrusel" role="radiogroup" aria-label="Filtros">
+            {% for f in filtros %}
+            <li>
+              <button type="button" class="filtro{% if loop.first %} filtro--activo{% endif %}"
+                      role="radio" aria-checked="{{ 'true' if loop.first else 'false' }}"
+                      data-filtro="{{ f.id }}"
+                      data-mascara-variable="{{ 'true' if f.mascara_variable else 'false' }}"
+                      data-descripcion="{{ f.descripcion }}">
+                <span class="filtro__anillo">
+                  <img class="filtro__miniatura" src="{{ url_for('static', path=f.miniatura) }}" alt="" loading="lazy">
+                </span>
+                <span class="filtro__nombre">{{ f.nombre }}</span>
+              </button>
+            </li>
+            {% endfor %}
+          </ul>
+          <button type="button" class="carrusel__flecha carrusel__flecha--der" id="flecha-der" aria-label="Siguiente">
+            <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+
+        <p class="panel__descripcion" id="descripcion-filtro">{{ filtros[0].descripcion }}</p>
+
+        <div class="mascara" id="control-mascara">
+          <div class="mascara__cabecera">
+            <h2 class="panel__titulo">Tamaño de máscara</h2>
+            <output class="mascara__valor" id="valor-mascara">{{ config.mascara.defecto }} × {{ config.mascara.defecto }}</output>
+          </div>
+          <input type="range" id="input-mascara" class="deslizador"
+                 min="{{ config.mascara.min }}" max="{{ config.mascara.max }}" step="2"
+                 value="{{ config.mascara.defecto }}" aria-label="Tamaño de máscara k">
+          <div class="mascara__escala" aria-hidden="true">
+            <span>{{ config.mascara.min }}</span><span>{{ config.mascara.max }}</span>
+          </div>
+          <div class="mascara__rapidos" role="group" aria-label="Tamaños frecuentes">
+            {% for k in [3, 9, 21] %}
+            <button type="button" class="chip" data-k="{{ k }}">{{ k }}×{{ k }}</button>
+            {% endfor %}
+          </div>
+        </div>
+
+        <button type="button" class="boton boton--principal" id="btn-aplicar" disabled>
+          <span class="boton__texto">Aplicar filtro</span>
+          <span class="giro" aria-hidden="true"></span>
+        </button>
+        <p class="estado" id="estado" role="status"></p>
+      </aside>
+    </section>
+
+    <!-- Resultados -->
+    <section class="resultados" id="resultados" hidden>
+      <div class="resultados__cabecera">
+        <div>
+          <h2 class="resultados__titulo">Resultado</h2>
+          <div class="etiquetas" id="etiquetas"></div>
+        </div>
+        <a class="boton boton--principal boton--descarga" id="btn-descargar" download>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>
+          Descargar
+        </a>
+      </div>
+      <p class="aviso" id="aviso-simulado" hidden>
+        Vista previa simulada: el backend de convolución aún no está conectado.
+      </p>
+      <div class="comparacion">
+        <figure class="tarjeta lienzo">
+          <figcaption class="lienzo__etiqueta">Original</figcaption>
+          <img id="img-original" alt="Imagen original">
+        </figure>
+        <figure class="tarjeta lienzo">
+          <figcaption class="lienzo__etiqueta lienzo__etiqueta--resultado">Filtrada</figcaption>
+          <img id="img-resultado" alt="Imagen filtrada">
+        </figure>
+      </div>
+    </section>
+  </main>
+
+  <script>window.CONFIG = {{ config | tojson }};</script>
+  <script src="{{ url_for('static', path='js/app.js') }}"></script>
+</body>
+</html>
