@@ -26,7 +26,7 @@
           <span class="avatar" aria-hidden="true"></span>
           <div class="tarjeta__titulos">
             <strong id="nombre-archivo">Nueva imagen</strong>
-            <small id="info-archivo">JPG, PNG, BMP o PGM · máx. 25 MB</small>
+            <small id="info-archivo">JPG, PNG, BMP o PGM · máx. {{ config.limites.max_mb }} MB</small>
           </div>
           <button type="button" class="boton-texto" id="btn-cambiar" hidden>Cambiar</button>
         </div>
@@ -82,24 +82,24 @@
             <h2 class="panel__titulo">Tamaño de máscara</h2>
             <output class="mascara__valor" id="valor-mascara">{{ config.mascara.defecto }} × {{ config.mascara.defecto }}</output>
           </div>
-          <input type="range" id="input-mascara" class="deslizador"
-                 min="{{ config.mascara.min }}" max="{{ config.mascara.max }}" step="2"
-                 value="{{ config.mascara.defecto }}" aria-label="Tamaño de máscara k">
-          <div class="mascara__escala" aria-hidden="true">
-            <span>{{ config.mascara.min }}</span><span>{{ config.mascara.max }}</span>
-          </div>
-          <div class="mascara__rapidos" role="group" aria-label="Tamaños frecuentes">
-            {% for k in [3, 9, 21] %}
-            <button type="button" class="chip" data-k="{{ k }}">{{ k }}×{{ k }}</button>
+          <div class="segmentado" role="radiogroup" aria-label="Tamaño de máscara de la media">
+            {% for k in config.mascara["valores"] %}
+            <button type="button" class="segmentado__opcion" role="radio" data-k="{{ k }}"
+                    aria-checked="{{ 'true' if k == config.mascara.defecto else 'false' }}">
+              <span class="segmentado__k">{{ k }}×{{ k }}</span>
+              <span class="segmentado__px">{{ k * k }} coef.</span>
+            </button>
             {% endfor %}
           </div>
+        </div>
         </div>
 
         <button type="button" class="boton boton--principal" id="btn-aplicar" disabled>
           <span class="boton__texto">Aplicar filtro</span>
           <span class="giro" aria-hidden="true"></span>
         </button>
-        <p class="estado" id="estado" role="status"></p>
+        <p class="estado" id="estado" role="status" aria-live="polite"></p>
+        <p class="aviso aviso--error" id="aviso-gpu" hidden></p>
       </aside>
     </section>
 
@@ -115,9 +115,6 @@
           Descargar
         </a>
       </div>
-      <p class="aviso" id="aviso-simulado" hidden>
-        Vista previa simulada: el backend de convolución aún no está conectado.
-      </p>
       <div class="comparacion">
         <figure class="tarjeta lienzo">
           <figcaption class="lienzo__etiqueta">Original</figcaption>
@@ -128,6 +125,14 @@
           <img id="img-resultado" alt="Imagen filtrada">
         </figure>
       </div>
+      <section class="tarjeta tiempos" aria-labelledby="titulo-tiempos">
+        <div class="tiempos__cabecera">
+          <h3 class="tiempos__titulo" id="titulo-tiempos">Tiempos de procesamiento</h3>
+          <span class="tiempos__nota">milisegundos (ms)</span>
+        </div>
+        <div class="barra-tiempos" id="barra-tiempos" aria-hidden="true"></div>
+        <dl class="tiempos__lista" id="lista-tiempos"></dl>
+      </section>
     </section>
   </main>
 

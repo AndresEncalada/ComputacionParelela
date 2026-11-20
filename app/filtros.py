@@ -1,16 +1,20 @@
 """
-filtros.py - Catalogo de filtros que expone la interfaz web.
+filtros.py - Catalogo de filtros y construccion de mascaras.
 
 Es la unica fuente de verdad para el frontend (carrusel) y para la validacion
-de la API. Los nombres de `id` coinciden con los usados en src/main.py.
+de la API. Los coeficientes vienen de la practica 02 (app/practica02.py).
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-MASCARA_MIN = 3
-MASCARA_MAX = 21
+import numpy as np
+
+from app.practica02 import LAPLACIANO_3, NITIDEZ_3, mascara_media
+
+# Tamanos de la media definidos en la practica 02 (unicos permitidos)
+MASCARAS_MEDIA: tuple[int, ...] = (3, 9, 21)
 MASCARA_DEFECTO = 9
 
 
@@ -50,8 +54,52 @@ FILTROS: tuple[Filtro, ...] = (
 FILTROS_POR_ID = {f.id: f for f in FILTROS}
 
 
-def catalogo() -> dict:
-    return {
+class ParametroInvalido(ValueError):
+    """Filtro o tamano de mascara no permitidos."""
+
+
+def mascara_permitida(k: int) -> bool:
+    return k in MASCARAS_MEDIA
+
+
+def resolver_parametros(filtro: str, mascara: str | int | None) -> tuple[str, int]:
+    """Valida filtro y mascara recibidos como texto. Devuelve (filtro, k)."""
+    if filtro not in FILTROS_POR_ID:
+        validos = ", ".join(FILTROS_POR_ID)
+        raise ParametroInvalido(f"Filtro desconocido: '{filtro}'. Valores permitidos: {validos}.")
+    if not FILTROS_POR_ID[filtro].mascara_variable:
+        return filtro, 3
+    try:
+        k = int(mascara) if mascara not in (None, "") else MASCARA_DEFECTO
+    except (TypeError, ValueError):
+        raise ParametroInvalido(f"La máscara debe ser un número entero, se recibió '{mascara}'.") from None
+    if not mascara_permitida(k):
+        raise ParametroInvalido(
+            f"Tamaño de máscara no permitido: {k}. Valores permitidos para la media: "
+            f"{', '.join(map(str, MASCARAS_MEDIA))}."
+        )
+    return filtro, k
+
+
+def construir_mascara(filtro: str, k: int) -> np.ndarray:
+    """Mascara k x k en float32 con los mismos coeficientes de la practica 02."""
+    if filtro == "media":
+        m = [0.0] * (k * k)
+        mascara_media(m, k)
+    elif filtro == "nitidez":
+        m = NITIDEZ_3
+    elif filtro == "laplaciano":
+        m = LAPLACIANO_3
+    else:
+        raise ParametroInvalido(f"Filtro desconocido: '{filtro}'.")
+    return np.asarray(m, dtype=np.float32)
+
+
+def catalogo(limites: dict | None = None) -> dict:
+    datos = {
         "filtros": [asdict(f) for f in FILTROS],
-        "mascara": {"min": MASCARA_MIN, "max": MASCARA_MAX, "defecto": MASCARA_DEFECTO},
+        "mascara": {"valores": list(MASCARAS_MEDIA), "defecto": MASCARA_DEFECTO},
     }
+    if limites:
+        datos["limites"] = limites
+    return datos
