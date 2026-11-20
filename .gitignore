@@ -11,3 +11,7 @@ __pycache__/
 experimentos-pycuda/resultados/*
 !experimentos-pycuda/resultados/*.csv
 !experimentos-pycuda/resultados/*.jpg
+
+# Registros de los servidores levantados por las pruebas
+pruebas/resultados/**/servidor_*.log
+.pytest_cache/

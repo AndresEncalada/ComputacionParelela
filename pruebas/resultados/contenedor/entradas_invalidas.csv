@@ -1,0 +1,12 @@
+caso,http_esperado,http_obtenido,codigo,mensaje,request_id,estado
+archivo_no_imagen,415,415,formato_no_valido,"El archivo no es una imagen válida. Formatos aceptados: JPG, PNG, BMP o PGM.",517c2803332b43c29994ad838e1c1413,OK
+pdf_renombrado_jpg,415,415,formato_no_valido,"El archivo no es una imagen válida. Formatos aceptados: JPG, PNG, BMP o PGM.",96d59904713040368595711f06a1e151,OK
+archivo_supera_limite,413,413,archivo_demasiado_grande,El archivo supera el límite de 25 MB.,,OK
+filtro_desconocido,422,422,parametro_invalido,"Filtro desconocido: 'sepia'. Valores permitidos: media, nitidez, laplaciano.",7b22c009450f438c831c1c019984fb3d,OK
+mascara_par,422,422,parametro_invalido,"Tamaño de máscara no permitido: 4. Valores permitidos para la media: 3, 9, 21.",de243c4adabe40018bc4400dc65459bd,OK
+mascara_intermedia_5,422,422,parametro_invalido,"Tamaño de máscara no permitido: 5. Valores permitidos para la media: 3, 9, 21.",3287e00539214eac9a0a00d29d424927,OK
+mascara_fuera_de_rango,422,422,parametro_invalido,"Tamaño de máscara no permitido: 23. Valores permitidos para la media: 3, 9, 21.",13f43dccb1cf48738d4f52fee4f6c8a3,OK
+mascara_no_numerica,422,422,parametro_invalido,"La máscara debe ser un número entero, se recibió 'abc'.",ed8cbfaac2244937ae66bb0313450b1e,OK
+salida_no_valida,422,422,parametro_invalido,Salida no válida: 'gif'. Usa 'png' o 'npy'.,050ab33ce2294fef915f3ab7963828a6,OK
+sin_archivo,422,422,parametro_invalido,Faltan o son inválidos los campos: imagen.,,OK
+recuperacion_solicitud_valida,200,200,ok,GPU NVIDIA GeForce RTX 3050 Laptop GPU,b136497be30b40b2921f935cf3c25a86,OK

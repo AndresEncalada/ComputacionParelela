@@ -1,0 +1,6 @@
+solicitud,http,codigo,request_id,espera_cola_ms,retry_after
+0,200,ok,8d25d8952f6249e0998d2647c48156e1,0.1927,
+1,503,cola_llena,3d7f31caaec8421dacca07493181ab46,,2
+2,503,cola_llena,07246eb57c77451f9ef494a9edd24fdf,,2
+3,200,ok,f4f0782ab78f42309e0811a2ab9d78dc,1502.1405,
+despues,200,ok,dc7c1a32a23947aaa19beb72d2565e7e,0.0671,

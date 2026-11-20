@@ -1,0 +1,6 @@
+filtro,mascara,resolucion,hilos_bloque,error_abs_max,mae,tolerancia,pixeles_png_distintos,estado
+media,3x3,2000x2000,256,0.000000e+00,0.000000e+00,0.001,0,OK
+media,9x9,2000x2000,256,0.000000e+00,0.000000e+00,0.001,0,OK
+media,21x21,2000x2000,256,0.000000e+00,0.000000e+00,0.001,0,OK
+nitidez,3x3,2000x2000,256,0.000000e+00,0.000000e+00,0.001,0,OK
+laplaciano,3x3,2000x2000,256,0.000000e+00,0.000000e+00,0.001,0,OK
