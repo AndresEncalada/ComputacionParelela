@@ -6,7 +6,7 @@ Convolución 2D sobre imágenes en escala de grises con **Python secuencial** (C
 
 ```
 .
-├── experimentos/          Práctica: implementación CPU/GPU, mediciones y análisis
+├── experimentos-pycuda/   Práctica: implementación CPU/GPU, mediciones y análisis
 │   ├── src/               cpu_conv.py, gpu_conv.py, main.py
 │   ├── analisis/          grafico.ipynb (gráficas comparativas)
 │   ├── resultados/        CSV de tiempos e imágenes filtradas
@@ -25,7 +25,7 @@ Convolución 2D sobre imágenes en escala de grises con **Python secuencial** (C
 
 | Parte | Documentación | Cómo ejecutar |
 |-------|---------------|---------------|
-| Experimentos | [experimentos/README.md](experimentos/README.md) | `cd experimentos && python src/main.py entrada.jpg` |
+| Experimentos | [experimentos-pycuda/README.md](experimentos-pycuda/README.md) | `cd experimentos-pycuda && python src/main.py entrada.jpg` |
 | App web | [app/README.md](app/README.md) | `uvicorn app.main:app --reload` (desde la raíz) |
 
 > La implementación original en C secuencial y CUDA C se conserva en la rama `master` (commit `eea17b5`).
@@ -35,6 +35,6 @@ Convolución 2D sobre imágenes en escala de grises con **Python secuencial** (C
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt          # todo
-.venv/bin/pip install -r experimentos/requirements.txt   # solo experimentos (requiere CUDA)
+.venv/bin/pip install -r experimentos-pycuda/requirements.txt   # solo experimentos (requiere CUDA)
 .venv/bin/pip install -r app/requirements.txt            # solo app web
 ```

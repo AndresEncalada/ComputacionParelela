@@ -8,6 +8,6 @@
 venv/
 __pycache__/
 *.pyc
-experimentos/resultados/*
-!experimentos/resultados/*.csv
-!experimentos/resultados/*.jpg
+experimentos-pycuda/resultados/*
+!experimentos-pycuda/resultados/*.csv
+!experimentos-pycuda/resultados/*.jpg

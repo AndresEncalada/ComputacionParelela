@@ -7,6 +7,7 @@ Convolución 2D sobre imágenes en escala de grises implementada en **Python sec
 | Archivo | Descripción |
 |---------|-------------|
 | `src/cpu_conv.py` | Lectura/escritura de imágenes, generación de máscaras y convolución 2D secuencial píxel a píxel en Python puro (límite configurable de 30 min por configuración) |
+| `src/kernel_conv.py` | Código fuente del kernel CUDA, sin efectos secundarios; lo comparten `gpu_conv.py` y la aplicación web |
 | `src/gpu_conv.py` | Kernel CUDA 1D compilado con `pycuda.compiler.SourceModule`, validación numérica CPU vs GPU y medición de tiempos con `pycuda.driver.Event` |
 | `src/main.py` | Programa principal: integra ambos módulos, registra inicialización de contexto y compilación del kernel, ejecuta validaciones y los 4 experimentos |
 | `analisis/grafico.ipynb` | Notebook en Python para generar las gráficas comparativas |
@@ -14,6 +15,8 @@ Convolución 2D sobre imágenes en escala de grises implementada en **Python sec
 | `RESULTADOS.md` | Análisis de resultados y gráficas comparativas |
 
 > La implementación original de referencia en C secuencial y CUDA C (`src/cpu_conv.c`, `src/gpu_conv.cu`, `src/main.cu`) se conserva intacta en la rama `master` (commit `eea17b5`).
+
+> **Cambio respecto a la práctica 02 (práctica 03):** el texto del kernel se movió sin modificaciones de `gpu_conv.py` a `kernel_conv.py`, para que la app web pueda importarlo sin crear un contexto con `pycuda.autoinit`. La validación manual 5×5 en CPU y GPU se volvió a ejecutar después del cambio y da OK (centro 50.0000, esquina 8.8889, MaxErr 2.5e-06).
 
 ## Filtros implementados
 
@@ -29,7 +32,7 @@ Manejo de bordes: zero-padding (los píxeles fuera de la imagen se tratan como 0
 
 - **Python** 3.14+ (probado con 3.14.10)
 - **CUDA Toolkit** con `nvcc` (probado con CUDA 13.4) y **GPU NVIDIA**
-- Paquetes en `experimentos/requirements.txt`:
+- Paquetes en `experimentos-pycuda/requirements.txt`:
   - `numpy==2.5.4`
   - `pillow==13.0.0` (solo para lectura/escritura de imágenes JPG/PNG/BMP)
   - `pycuda==2026.1`
@@ -39,17 +42,17 @@ Manejo de bordes: zero-padding (los píxeles fuera de la imagen se tratan como 0
 ```bash
 # Desde la raiz del repositorio
 python3 -m venv .venv
-.venv/bin/pip install -r experimentos/requirements.txt
+.venv/bin/pip install -r experimentos-pycuda/requirements.txt
 ```
 
 ## Ejecución
 
 El programa acepta cualquier imagen en formato JPG, PNG, BMP o PGM y la convierte automáticamente a escala de grises. Si no se pasa ruta, usa `entrada.jpg` por defecto (o un gradiente sintético si no existe).
 
-Los comandos se ejecutan **desde la carpeta `experimentos/`** (las rutas `entrada.jpg` y `resultados/` son relativas a ella).
+Los comandos se ejecutan **desde la carpeta `experimentos-pycuda/`** (las rutas `entrada.jpg` y `resultados/` son relativas a ella).
 
 ```bash
-cd experimentos
+cd experimentos-pycuda
 
 # Con la imagen del repositorio:
 ../.venv/bin/python src/main.py entrada.jpg

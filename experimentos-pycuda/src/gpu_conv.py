@@ -18,6 +18,7 @@ TIEMPO_INIT_CTX_MS = (time.perf_counter() - _t_ctx_ini) * 1000.0
 import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
 
+from kernel_conv import KERNEL_SRC, NOMBRE_KERNEL
 from cpu_conv import (
     NUM_REPS,
     Imagen,
@@ -36,47 +37,6 @@ TOLERANCIA = 1e-3
 # devuelve un codigo de error, mostrando el mensaje equivalente a cudaGetErrorString.
 
 
-# --- Kernel en CUDA ---
-
-# Configuracion 1D (bloques e hilos solo en X).
-# Cada hilo calcula 1 pixel de salida leyendo desde memoria global.
-_KERNEL_SRC = r"""
-__global__ void kernelConvolucionGPU(const unsigned char *entrada,
-                                     float *salida_cruda,
-                                     const float *mascara,
-                                     int ancho, int alto, int tam) {
-    // 1. Calcular el indice global 1D del hilo
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-    // Control de bordes: si hay mas hilos que pixeles en la imagen, no hacen nada
-    if (idx >= ancho * alto) return;
-
-    // 2. Convertir el indice 1D a coordenadas 2D (fila y columna)
-    int fila  = idx / ancho;
-    int col   = idx % ancho;
-
-    int mitad = tam / 2;
-    float suma = 0.0f;
-
-    // 3. Recorrer la mascara centrada en (fila, col)
-    for (int ky = 0; ky < tam; ky++) {
-        for (int kx = 0; kx < tam; kx++) {
-            int y = fila + ky - mitad;
-            int x = col  + kx - mitad;
-
-            // Zero-padding: fuera de los limites de la imagen se asume 0
-            unsigned char pixel = 0;
-            if (x >= 0 && x < ancho && y >= 0 && y < alto)
-                pixel = entrada[y * ancho + x];
-
-            suma += (float)pixel * mascara[ky * tam + kx];
-        }
-    }
-
-    // Guardar el valor en float antes de truncar a [0, 255]
-    salida_cruda[idx] = suma;
-}
-"""
 
 # PyCUDA compila el kernel con nvcc al importar el modulo.
 # En Windows, cl.exe imprime el nombre del archivo ("kernel.cu") y PyCUDA lo muestra
@@ -84,8 +44,8 @@ __global__ void kernelConvolucionGPU(const unsigned char *entrada,
 _t_comp_ini = time.perf_counter()
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", message="The CUDA compiler succeeded")
-    _modulo = SourceModule(_KERNEL_SRC)
-kernelConvolucionGPU = _modulo.get_function("kernelConvolucionGPU")
+    _modulo = SourceModule(KERNEL_SRC)
+kernelConvolucionGPU = _modulo.get_function(NOMBRE_KERNEL)
 TIEMPO_COMPILACION_MS = (time.perf_counter() - _t_comp_ini) * 1000.0
 
 

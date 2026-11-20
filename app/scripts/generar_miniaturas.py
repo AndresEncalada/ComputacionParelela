@@ -13,7 +13,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 RAIZ = Path(__file__).resolve().parents[2]
-RESULTADOS = RAIZ / "experimentos" / "resultados"
+RESULTADOS = RAIZ / "experimentos-pycuda" / "resultados"
 DESTINO = RAIZ / "app" / "static" / "img" / "filtros"
 
 # id del filtro -> imagen de resultados de origen

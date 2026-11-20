@@ -13,9 +13,9 @@ uvicorn app.main:app --reload   # http://localhost:8000
 |---------|-------------|
 | `main.py` | Rutas: `GET /` (interfaz), `GET /api/filtros` (catálogo), `POST /api/procesar` (multipart: `imagen`, `filtro`, `mascara`; devuelve PNG) |
 | `filtros.py` | Catálogo de filtros y límites de máscara (fuente única para frontend y validación) |
-| `servicios/procesamiento.py` | `aplicar_filtro()`: punto de integración con `experimentos/src/gpu_conv.py` (**pendiente**, devuelve 501) |
+| `servicios/procesamiento.py` | `aplicar_filtro()`: punto de integración con `experimentos-pycuda/src/gpu_conv.py` (**pendiente**, devuelve 501) |
 | `templates/`, `static/` | HTML (Jinja2), CSS y JS de la interfaz |
-| `scripts/generar_miniaturas.py` | Genera las miniaturas del carrusel recortando el centro de `experimentos/resultados/*_gpu.jpg` |
+| `scripts/generar_miniaturas.py` | Genera las miniaturas del carrusel recortando el centro de `experimentos-pycuda/resultados/*_gpu.jpg` |
 
 Mientras `aplicar_filtro()` no esté implementada, la interfaz muestra una vista previa simulada con filtros CSS y deshabilita la descarga.
 
